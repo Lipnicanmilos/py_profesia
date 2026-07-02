@@ -1,0 +1,19 @@
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Secrets
+.env
+
+# Databases & generované výstupy
+*.db
+profesia_ponuky.txt
+*_export.json
+
+# Interné poznámky (AWS účet, ARN a pod.)
+info.txt
+
+# Python
+__pycache__/
+*.pyc
