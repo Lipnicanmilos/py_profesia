@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import time
 import re
+import json
 
 # --- NASTAVENIA ---
 DB_PATH = 'profesia_jobs.db'
@@ -100,6 +101,7 @@ def scrape_profesia():
 
         page = 1
         new_jobs_count = 0
+        new_jobs = []
 
         while True:
             print(f"\n--- Spracovávam stranu {page} ---")
@@ -197,6 +199,9 @@ def scrape_profesia():
                     )
                     if c.rowcount > 0:
                         new_jobs_count += 1
+                        new_jobs.append({"title": title, "employer": employer,
+                                         "location": location, "salary": salary,
+                                         "date": date_text, "link": link})
                         print(f"   [+] Pridané: {title} | {employer} | Plat: {salary} | Dátum: {date_text}")
 
                 except Exception as e:
@@ -219,6 +224,10 @@ def scrape_profesia():
                 f.write("-" * 30 + "\n")
 
         print("Export do profesia_ponuky.txt hotový.")
+
+        # Zoznam novo pridaných ponúk (tento beh) pre e-mailový report na serveri
+        with open("new_jobs.json", "w", encoding="utf-8") as f:
+            json.dump(new_jobs, f, ensure_ascii=False, indent=2)
 
 
 # --- OZNAČENIE OSLOVENEJ PONUKY ---

@@ -1,0 +1,45 @@
+name: Scrape jobs
+
+# Serverový denný beh scrapera Profesia.sk + e-mailový report.
+# Nahrádza pôvodné AWS Lambda + EventBridge + SES (účet zrušený).
+
+on:
+  schedule:
+    - cron: "0 5 * * *"     # denne 05:00 UTC (~07:00 SK)
+  workflow_dispatch: {}      # manuálne spustenie z GitHub Actions
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Inštalácia závislostí
+        run: pip install requests beautifulsoup4
+
+      # Dedup medzi behmi: SQLite DB sa nesie cez cache, aby e-mail
+      # obsahoval len naozaj nové ponuky (nie tie z včera).
+      - name: Obnov job DB z cache
+        uses: actions/cache@v4
+        with:
+          path: profesia_jobs.db
+          key: profesia-db-${{ github.run_id }}
+          restore-keys: |
+            profesia-db-
+
+      - name: Scrape Profesia.sk
+        run: python py_search.py
+
+      - name: E-mailový report
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: python report_email.py

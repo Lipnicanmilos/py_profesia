@@ -10,6 +10,7 @@ venv/
 *.db
 profesia_ponuky.txt
 *_export.json
+new_jobs.json
 
 # Interné poznámky (AWS účet, ARN a pod.)
 info.txt
