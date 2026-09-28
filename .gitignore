@@ -9,6 +9,7 @@ venv/
 # Databases & generované výstupy
 *.db
 profesia_ponuky.txt
+ponuky.txt
 *_export.json
 new_jobs.json
 

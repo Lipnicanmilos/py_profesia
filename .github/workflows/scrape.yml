@@ -1,41 +1,89 @@
 name: Scrape jobs
 
-# Serverový denný beh scrapera Profesia.sk + e-mailový report.
-# Nahrádza pôvodné AWS Lambda + EventBridge + SES (účet zrušený).
+# Denný serverový beh: Profesia.sk + LinkedIn → e-mailový report o 08:00 (Bratislava).
+# Nahrádza pôvodné AWS Lambda + EventBridge + SES (účet zrušený 09/2026).
 
 on:
   schedule:
-    - cron: "0 5 * * *"     # denne 05:00 UTC (~07:00 SK)
-  workflow_dispatch: {}      # manuálne spustenie z GitHub Actions
+    # GitHub cron beží v UTC a nepozná letný čas → dva časy + kontrola v jobe "gate",
+    # takže report príde vždy o 08:00 bratislavského času (+ prípadné oneskorenie GitHubu).
+    - cron: "7 6 * * *"    # 08:07 v lete (SELČ = UTC+2)
+    - cron: "7 7 * * *"    # 08:07 v zime (SEČ = UTC+1)
+  workflow_dispatch: {}    # ručné spustenie: Actions → Scrape jobs → Run workflow
+  push:                    # po zmene scrapera sa hneď otestuje
+    branches: [main]
+    paths:
+      - "*.py"
+      - ".github/workflows/scrape.yml"
 
 permissions:
   contents: read
 
-jobs:
-  scrape:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+concurrency:
+  group: scrape            # dva behy naraz by si prepisovali DB v cache
+  cancel-in-progress: false
 
-      - uses: actions/setup-python@v5
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHED: ${{ github.event.schedule }}
+        run: |
+          offset=$(TZ=Europe/Bratislava date +%z)
+          run=false
+          if [ "$EVENT" != "schedule" ]; then run=true
+          elif [ "$SCHED" = "7 6 * * *" ] && [ "$offset" = "+0200" ]; then run=true
+          elif [ "$SCHED" = "7 7 * * *" ] && [ "$offset" = "+0100" ]; then run=true
+          fi
+          echo "event=$EVENT cron='$SCHED' bratislava_offset=$offset -> run=$run"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  scrape:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Inštalácia závislostí
         run: pip install requests beautifulsoup4
 
-      # Dedup medzi behmi: SQLite DB sa nesie cez cache, aby e-mail
-      # obsahoval len naozaj nové ponuky (nie tie z včera).
-      - name: Obnov job DB z cache
-        uses: actions/cache@v4
+      # SQLite DB sa nesie medzi behmi cez cache → e-mail obsahuje len nové ponuky
+      - name: Obnov DB ponúk z cache
+        uses: actions/cache@v6
         with:
           path: profesia_jobs.db
           key: profesia-db-${{ github.run_id }}
           restore-keys: |
             profesia-db-
 
-      - name: Scrape Profesia.sk
+      - name: Profesia.sk
         run: python py_search.py
+
+      - name: LinkedIn
+        run: python linkedin_search.py
+        continue-on-error: true   # výpadok LinkedIn nesmie zastaviť report z Profesie
+
+      # uložené ponuky na stiahnutie zo stránky behu (Artifacts → ponuky)
+      - name: Ulož ponuky
+        uses: actions/upload-artifact@v7
+        with:
+          name: ponuky
+          path: |
+            ponuky.txt
+            new_jobs.json
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: E-mailový report
         env:

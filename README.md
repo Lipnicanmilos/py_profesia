@@ -1,87 +1,111 @@
-# py_profesia — Job Scraper
+# py_profesia — Job Scraper (Profesia.sk + LinkedIn)
 
-Automatizovaný **scraper pracovných ponúk** z **Profesia.sk** a **LinkedIn**, ktorý filtruje
-pozície podľa kľúčových slov (Python, Django, FastAPI, backend, …), ukladá ich do databázy,
-označuje už oslovené firmy a vie voliteľne synchronizovať dáta do **AWS DynamoDB** a spúšťať
-sa denne cez **AWS Lambda + EventBridge** s reportom cez **SES**.
+Automatizovaný **scraper IT pracovných ponúk** z **Profesia.sk** a **LinkedIn**. Každý deň
+o **08:00** beží na serveri (**GitHub Actions**), vyfiltruje relevantné pozície podľa kľúčových
+slov, odloží ich do databázy a pošle **e-mailový report len s novými ponukami**.
 
-Vznikol ako osobný nástroj na hľadanie práce — namiesto ručného prechádzania portálov beží
-skript, ktorý každý deň vytiahne len relevantné nové ponuky a otvorí ich v prehliadači.
+Vznikol ako osobný nástroj na hľadanie práce — namiesto ručného prechádzania portálov príde
+každé ráno mail s tým, čo pribudlo.
 
 ## Čo to robí
 
 | Funkcia | Popis |
 |---------|-------|
-| **Scraping Profesia.sk** | Prechádza výsledky (stránkovanie), sťahuje detail ponuky pre plat a presný dátum |
-| **Filtrovanie** | Whitelist kľúčových slov + blacklist (financie, marketing, stáže…) na titule aj plnom texte |
-| **Scraping LinkedIn** | Prihlásenie cez `li_at` cookie, Selenium, prechod výsledkov a filtrovanie podľa keywords |
-| **Deduplikácia** | Ponuky sa ukladajú s unikátnym linkom, duplikáty sa preskočia ešte pred stiahnutím detailu |
-| **Sledovanie oslovených** | Príznak `contacted` + poznámka; interaktívne označovanie z CLI |
-| **Otváranie ponúk** | `open_new_jobs.py` otvorí neoslovené linky v prehliadači a rovno ich označí |
-| **Export** | TXT prehľad neoslovených ponúk; voliteľný JSON export z DynamoDB |
-| **Cloud (voliteľné)** | Prehliadanie/synchronizácia DynamoDB tabuľky, denné spúšťanie cez Lambda + EventBridge + SES |
+| **Profesia.sk** | IT ponuky v Bratislavskom kraji od 2000 €/mes.; stránkovanie, detail ponuky pre plat a presný dátum |
+| **LinkedIn** | Verejné vyhľadávanie ponúk (bez prihlásenia) v Bratislave za posledné 3 dni, viac kľúčových slov |
+| **Filtrovanie** | Kľúčové slová v názve alebo texte ponuky + vyraďovacie slová v názve (stáž, sales, marketing…) |
+| **Deduplikácia** | Každá ponuka sa nahlási len raz; odmietnuté ponuky sa pamätajú, aby sa ich detail nesťahoval znova |
+| **Denný report** | E-mail o 08:00 zoskupený podľa zdroja; prehľad aj na stránke behu v GitHube |
+| **Uložené ponuky** | `ponuky.txt` so všetkými neoslovenými ponukami — artefakt každého behu |
+| **Lokálne použitie** | Otvorenie ponúk v prehliadači, označovanie oslovených firiem |
 
-## Použité knižnice
+## Ako to beží na serveri
 
-| Oblasť | Knižnice |
-|--------|----------|
-| **HTTP / parsing** | requests, beautifulsoup4 |
-| **Browser automation** | selenium (LinkedIn) |
-| **Databáza** | sqlite3 (lokálne), boto3 (AWS DynamoDB) |
-| **Konfigurácia** | python-dotenv |
+Workflow [`.github/workflows/scrape.yml`](.github/workflows/scrape.yml) na GitHub Actions (zadarmo):
 
-## Stromová štruktúra
+1. **Každý deň o 08:00** bratislavského času (GitHub cron beží v UTC, preto sú v ňom dva časy
+   a krok `gate` vyberie ten správny podľa letného/zimného času; GitHub môže štart oneskoriť
+   o pár minút).
+2. Obnoví databázu ponúk z **cache** (dedup medzi dňami).
+3. Spustí `py_search.py` (Profesia) a `linkedin_search.py` (LinkedIn).
+4. Uloží `ponuky.txt` ako **artefakt** a pošle **e-mail** (`report_email.py`).
 
-```
-py_profesia/
-├── py_search.py         # hlavný scraper Profesia.sk (scrape + mark contacted + TXT export)
-├── open_new_jobs.py     # otvorí neoslovené ponuky v prehliadači a označí ich v DB
-├── view_dynamodb.py     # CLI na prehliadanie/hľadanie/export DynamoDB tabuľky
-├── linkedin/
-│   └── find_linked.py   # LinkedIn scraper (Selenium, prihlásenie cez li_at cookie)
-├── requirements.txt
-├── .env.example
-└── .gitignore
-```
+Spustiť sa dá aj ručne: **Actions → Scrape jobs → Run workflow**, a automaticky beží aj po
+každom pushi zmeny scrapera.
 
-## Inštalácia
+### Kde nájdem ponuky
+- **E-mail** — každé ráno nové ponuky (ak nejaké pribudli)
+- **GitHub → Actions → posledný beh → Summary** — tabuľka nových ponúk s odkazmi
+- **Artifacts → `ponuky`** na tej istej stránke — `ponuky.txt` so všetkými ponukami (30 dní)
+
+### Nastavenie e-mailu (GitHub Secrets)
+V repozitári **Settings → Secrets and variables → Actions** tri secrety:
+
+| Secret | Hodnota |
+|--------|---------|
+| `SMTP_USER` | Gmail adresa, z ktorej sa posiela |
+| `SMTP_PASS` | Gmail [App Password](https://myaccount.google.com/apppasswords) (16 znakov, bez medzier) |
+| `MAIL_TO` | kam má report prísť |
+
+## Databáza
+
+SQLite `profesia_jobs.db` — tabuľka `jobs` (oba zdroje, stĺpec `source`, čas nájdenia
+`found_at`, príznak `contacted`) a `seen_links` (ponuky, ktoré neprešli filtrom).
+
+Na serveri sa DB prenáša medzi behmi cez **GitHub Actions cache** — nie je vo verejnom repe.
+- **Prvý beh** (prázdna cache) pošle všetky aktuálne ponuky naraz, potom už len prírastky.
+- Keby workflow 7+ dní nebežal, GitHub cache zmaže a ďalší beh začne od nuly.
+
+## Lokálne použitie
 
 ```bash
 python -m venv .venv
-source .venv/Scripts/activate         # Windows (Git Bash)
-# source .venv/bin/activate           # Linux / macOS
+.venv\Scripts\pip install -r requirements.txt     # Windows
 
-pip install -r requirements.txt
-
-cp .env.example .env
-# doplň LI_AT_COOKIE (potrebné len pre LinkedIn scraper)
+.venv\Scripts\python py_search.py        # Profesia.sk → DB + ponuky.txt
+.venv\Scripts\python linkedin_search.py  # LinkedIn → DB + ponuky.txt
+.venv\Scripts\python py_search.py mark   # označ ponuku ako oslovenú
+.venv\Scripts\python open_new_jobs.py    # otvor neoslovené ponuky v prehliadači
 ```
 
-## Použitie
+Na Windows stačí dvojklik na `start.bat` (oba scrapery) alebo `open_new_jobs.bat`.
+Pre lokálne posielanie reportu skopíruj `.env.example` na `.env` a doplň SMTP údaje.
 
-```bash
-# Profesia.sk – stiahne nové ponuky do profesia_jobs.db + vygeneruje profesia_ponuky.txt
-python py_search.py
+## Nastavenia
 
-# Označ ponuku ako oslovenú (interaktívne)
-python py_search.py mark
+| Čo | Kde |
+|----|-----|
+| Kľúčové a vyraďovacie slová | `KEYWORDS`, `BLACKLIST` v [`common.py`](common.py) |
+| Profesia — kraj, kategória, plat | `BASE_URL` v [`py_search.py`](py_search.py) |
+| LinkedIn — hľadané výrazy, oblasť, obdobie | `SEARCH_KEYWORDS`, `GEO_ID`, `TIME_RANGE` v [`linkedin_search.py`](linkedin_search.py) |
+| Čas denného behu | `cron` v [`scrape.yml`](.github/workflows/scrape.yml) |
 
-# Otvor všetky neoslovené ponuky v prehliadači (a označ ich)
-python open_new_jobs.py
+Po zmene filtrov sa už odmietnuté ponuky znova nevyhodnocujú — ak ich chceš preveriť
+nanovo, vymaž tabuľku `seen_links`.
 
-# LinkedIn scraper (vyžaduje LI_AT_COOKIE v .env)
-python linkedin/find_linked.py
+## Štruktúra
 
-# Prehliadanie DynamoDB (ak používaš AWS backend)
-python view_dynamodb.py all 100
-python view_dynamodb.py search python
+```
+py_profesia/
+├── py_search.py          # scraper Profesia.sk (+ `mark` na označenie oslovených)
+├── linkedin_search.py    # scraper LinkedIn (verejné vyhľadávanie)
+├── common.py             # DB, HTTP s opakovaním, filtre, výstupy (ponuky.txt, new_jobs.json)
+├── report_email.py       # e-mailový report + súhrn na stránke behu
+├── open_new_jobs.py      # otvorí neoslovené ponuky v prehliadači a označí ich
+├── start.bat / open_new_jobs.bat
+├── .github/workflows/scrape.yml
+├── requirements.txt
+└── .env.example
 ```
 
 ## Poznámky
 
-- **Tajomstvá:** LinkedIn `li_at` cookie sa načítava z `.env` (mimo gitu). AWS prístup ide cez
-  štandardné boto3 credentials (`~/.aws/credentials` / IAM rola) — v kóde nie sú žiadne kľúče.
-- **Dáta:** databáza `profesia_jobs.db` a výstupné `.txt`/`.json` sú v `.gitignore`.
-- Scraping rešpektuje mierne pauzy medzi požiadavkami; hodnoty (URL, kľúčové slová, plat)
-  sa dajú upraviť v konštantách na začiatku `py_search.py`.
-- Použitie scraperov je na vlastnú zodpovednosť v súlade s podmienkami daných portálov.
+- **LinkedIn bez prihlásenia** — scraper nepoužíva `li_at` cookie ani Selenium; prihlásená
+  session zo serverovej IP by riskovala zablokovanie LinkedIn účtu.
+- **Diagnostika** — každý beh zapíše počty (strany, ponuky, chyby HTTP) ako anotácie na
+  stránku behu; ak by portál server blokoval, je to vidno tam.
+- **Tajomstvá** sú len v GitHub Secrets / lokálnom `.env` (mimo gitu).
+- Scraping rešpektuje pauzy medzi požiadavkami. Použitie je na vlastnú zodpovednosť
+  v súlade s podmienkami daných portálov.
+- **História:** pôvodne bežal na AWS (Lambda + EventBridge + SES, dáta v DynamoDB);
+  AWS účet bol v 09/2026 zrušený, preto presun na GitHub Actions.

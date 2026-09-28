@@ -2,8 +2,10 @@ import sqlite3
 import webbrowser
 import time
 
+from common import DB_PATH
+
 # --- KONFIGURÁCIA ---
-DB_NAME = 'profesia_jobs.db'
+DB_NAME = DB_PATH
 QUERY = "SELECT link FROM jobs WHERE contacted = 0"
 # TU JE ZMENA: Používame 'WHERE link = ?', aby sme updatli iba ten jeden link, ktorý otvárame
 UPDATE_QUERY = "UPDATE jobs SET contacted = 1 WHERE link = ?"

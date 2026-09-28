@@ -1,3 +1,10 @@
 @echo off
-"C:\Users\lipni\AppData\Local\Programs\Python\Python312\python.exe" "C:\Users\lipni\Documents\Python\py_profesia\py_search.py"
+REM Lokalne spustenie oboch scraperov (Profesia + LinkedIn). Pouzije .venv vedla skriptu.
+cd /d "%~dp0"
+set "PY=.venv\Scripts\python.exe"
+if not exist "%PY%" set "PY=python"
+"%PY%" py_search.py
+"%PY%" linkedin_search.py
+echo.
+echo Ponuky su v subore ponuky.txt
 pause
