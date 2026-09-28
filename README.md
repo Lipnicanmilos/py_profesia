@@ -37,6 +37,7 @@ každom pushi zmeny scrapera.
 - **E-mail** — každé ráno nové ponuky (ak nejaké pribudli)
 - **GitHub → Actions → posledný beh → Summary** — tabuľka nových ponúk s odkazmi
 - **Artifacts → `ponuky`** na tej istej stránke — `ponuky.txt` so všetkými ponukami (30 dní)
+- **Profesia** — kompletne cez jej vlastné e-mailové upozornenie (server Profesia blokuje, viď Poznámky)
 
 ### Nastavenie e-mailu (GitHub Secrets)
 V repozitári **Settings → Secrets and variables → Actions** tri secrety:
@@ -108,6 +109,9 @@ py_profesia/
   GitHubu prejde len prvá strana a pár detailov, potom vracia HTTP 202 (challenge). Scraper sa
   vtedy slušne zastaví, neopakuje požiadavky a zapíše varovanie. Plný zoznam z Profesie funguje
   pri lokálnom spustení (bežná IP); LinkedIn funguje aj zo servera.
+  **Úplný denný prehľad z Profesie** preto zabezpečuje jej oficiálne e-mailové upozornenie:
+  na [stránke s filtrom](https://www.profesia.sk/praca/bratislavsky-kraj/informacne-technologie/?salary=2000&salary_period=m)
+  tlačidlo **Posielať najnovšie ponuky** (správa upozornení: [profesia.sk/agent](https://www.profesia.sk/agent/)).
 - **Tajomstvá** sú len v GitHub Secrets / lokálnom `.env` (mimo gitu).
 - Scraping rešpektuje pauzy medzi požiadavkami. Použitie je na vlastnú zodpovednosť
   v súlade s podmienkami daných portálov.
