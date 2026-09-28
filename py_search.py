@@ -77,8 +77,9 @@ def scrape_profesia():
             print(f"\n--- Strana {page} ---")
             response = fetch(f"{BASE_URL}&page_num={page}", stats)
             if response is None:
-                annotate("warning", "Profesia",
-                         f"Stranu {page} sa nepodarilo načítať (chyby HTTP: {stats.get('http_errors')})")
+                reason = ("ochrana proti botom, HTTP 202" if stats.get("blocked")
+                          else f"chyby HTTP: {stats.get('http_errors')}")
+                annotate("warning", "Profesia", f"Stranu {page} sa nepodarilo načítať ({reason})")
                 break
 
             soup = BeautifulSoup(response.content, "html.parser")
@@ -137,6 +138,8 @@ def scrape_profesia():
                         time.sleep(DETAIL_PAUSE)
                         if details is None:
                             if not found_kw:
+                                if stats.get("blocked"):
+                                    break  # Profesia blokuje — ďalšie požiadavky nemajú zmysel
                                 continue  # nevieme rozhodnúť — skúsi sa zajtra znova
                         else:
                             full_text, detail_salary, detail_date = details
@@ -160,11 +163,18 @@ def scrape_profesia():
                                parsed_date=parse_date(date_text).isoformat(), link=link):
                         stats["new"] += 1
                         print(f"   [+] {title} | {employer} | {salary} | {date_text}")
+                    if stats.get("blocked"):
+                        break
 
                 except Exception as e:
                     print(f"   [!] Chyba pri spracovaní inzerátu: {e}")
 
             conn.commit()
+            if stats.get("blocked"):
+                annotate("warning", "Profesia",
+                         "Profesia blokuje tento server (ochrana proti botom, HTTP 202) — "
+                         "beh zastavený, spracovaná len časť ponúk")
+                break
             time.sleep(PAGE_PAUSE)
 
         export_txt(conn)

@@ -104,6 +104,10 @@ py_profesia/
   session zo serverovej IP by riskovala zablokovanie LinkedIn účtu.
 - **Diagnostika** — každý beh zapíše počty (strany, ponuky, chyby HTTP) ako anotácie na
   stránku behu; ak by portál server blokoval, je to vidno tam.
+- **Profesia a server** — Profesia chráni web proti botom (AWS WAF za CloudFront): z IP adries
+  GitHubu prejde len prvá strana a pár detailov, potom vracia HTTP 202 (challenge). Scraper sa
+  vtedy slušne zastaví, neopakuje požiadavky a zapíše varovanie. Plný zoznam z Profesie funguje
+  pri lokálnom spustení (bežná IP); LinkedIn funguje aj zo servera.
 - **Tajomstvá** sú len v GitHub Secrets / lokálnom `.env` (mimo gitu).
 - Scraping rešpektuje pauzy medzi požiadavkami. Použitie je na vlastnú zodpovednosť
   v súlade s podmienkami daných portálov.

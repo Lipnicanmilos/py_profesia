@@ -64,24 +64,33 @@ def annotate(level, title, message):
 _session = requests.Session()
 _session.headers.update(HEADERS)
 
+# Ochrana proti botom: 202 = WAF challenge (Profesia za CloudFront), 999 = blok LinkedIn.
+# Takú odpoveď neopakujeme — stránka dáva najavo, že automatický prístup z tejto IP nechce.
+BLOCK_STATUSES = {202, 999}
+
 
 def fetch(url, stats, retries=3):
-    """GET s opakovaním pri 403/429/5xx a sieťových chybách. Vráti Response alebo None.
+    """GET s opakovaním pri 429/5xx a sieťových chybách. Vráti Response alebo None.
 
-    Chyby sa počítajú do stats["http_errors"] — z nich vidno, či server blokuje.
+    Chyby sa počítajú do stats["http_errors"]; blokovanie nastaví stats["blocked"].
     """
     for attempt in range(1, retries + 1):
         try:
             r = _session.get(url, timeout=20)
+        except requests.RequestException as e:
+            status, final = type(e).__name__, False
+        else:
             if r.status_code == 200:
                 return r
             status = str(r.status_code)
-            if r.status_code in (400, 404, 410):
-                retries = attempt  # nemá zmysel opakovať
-        except requests.RequestException as e:
-            status = type(e).__name__
+            # blokovanie alebo neexistujúca stránka — opakovanie nepomôže
+            final = r.status_code in BLOCK_STATUSES or r.status_code in (400, 404, 410)
+            if r.status_code in BLOCK_STATUSES:
+                stats["blocked"] = stats.get("blocked", 0) + 1
         errors = stats.setdefault("http_errors", {})
         errors[status] = errors.get(status, 0) + 1
+        if final:
+            return None
         if attempt < retries:
             time.sleep(3 * attempt ** 2)  # 3 s, 12 s
     return None
